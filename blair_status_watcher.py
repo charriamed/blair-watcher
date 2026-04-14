@@ -9,7 +9,7 @@ from playwright.sync_api import sync_playwright
 import requests
 
 STATUS_URL = "https://status.ankama.com/"
-WEBHOOK_URL = "https://discord.com/api/webhooks/1493557013794259064/sV18egi6XwbLBArEgqfd__GzT616Rw4rSK0rurO0S4X7DvlZqbPdGvGQFl76sv9ef8jQ"
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "300"))
 STATE_FILE = "blair_status_state.json"
 TARGET_NAME = "Blair"
