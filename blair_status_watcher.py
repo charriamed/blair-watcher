@@ -1,8 +1,6 @@
 import json
 import os
 import re
-import sys
-import time
 from datetime import datetime, timezone
 
 from playwright.sync_api import sync_playwright
@@ -10,10 +8,8 @@ import requests
 
 STATUS_URL = "https://status.ankama.com/"
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
-CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "300"))
 STATE_FILE = "blair_status_state.json"
 TARGET_NAME = "Blair"
-SINGLE_RUN = os.getenv("SINGLE_RUN", "0") == "1"
 
 STATUS_PATTERNS = [
     ("operational", ["operational", "online", "up", "available", "ok", "running", "🟢"]),
@@ -23,7 +19,7 @@ STATUS_PATTERNS = [
 ]
 
 def get_page_with_browser():
-    print("📱 Navigation...", flush=True)
+    print("📱 Navigation vers status.ankama.com...", flush=True)
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
@@ -38,7 +34,6 @@ def get_page_with_browser():
         page.goto(STATUS_URL, wait_until="networkidle")
         page.get_by_text("DOFUS Touch", exact=True).click()
         page.wait_for_timeout(3000)
-
         content = page.content()
         browser.close()
         return content
@@ -59,7 +54,12 @@ def extract_blair_status(html):
     idx = compact.lower().find(TARGET_NAME.lower())
 
     if idx == -1:
-        return {"found": False, "status": "not_found"}
+        return {
+            "found": False,
+            "status": "not_found",
+            "snippet": None,
+            "matched": None,
+        }
 
     start = max(0, idx - 200)
     end = min(len(compact), idx + 300)
@@ -86,23 +86,6 @@ def save_state(state):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
-def send_webhook(content, color=3447003):
-    if not WEBHOOK_URL:
-        raise RuntimeError("WEBHOOK_URL manquant")
-
-    payload = {
-        "username": "Blair Status Watcher",
-        "embeds": [{
-            "title": "🚨 Statut Blair",
-            "description": content,
-            "color": color,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }]
-    }
-    r = requests.post(WEBHOOK_URL, json=payload, timeout=20)
-    print(f"Discord: {r.status_code}", flush=True)
-    r.raise_for_status()
-
 def color_for(status):
     return {
         "operational": 5763719,
@@ -113,76 +96,91 @@ def color_for(status):
         "not_found": 10197915,
     }.get(status, 9807270)
 
-def format_blair_message(current):
+def emoji_for(status):
+    return {
+        "operational": "🟢",
+        "degraded": "🟡",
+        "maintenance": "🔧",
+        "major_outage": "🔴",
+        "unknown": "❓",
+        "not_found": "❔",
+    }.get(status, "❓")
+
+def format_status_label(status):
+    labels = {
+        "operational": "Opérationnel",
+        "degraded": "Dégradé",
+        "maintenance": "Maintenance",
+        "major_outage": "Panne majeure",
+        "unknown": "Inconnu",
+        "not_found": "Introuvable",
+    }
+    return labels.get(status, status)
+
+def format_blair_message(current, previous_status=None):
     status = current.get("status", "unknown")
+    emoji = emoji_for(status)
+    status_label = format_status_label(status)
 
-    if not current["found"]:
-        return "❓ **Blair** introuvable dans la liste DOFUS Touch"
-
-    emoji = (
-        "🟢" if status == "operational"
-        else "🟡" if status == "degraded"
-        else "🔧" if status == "maintenance"
-        else "🔴" if status == "major_outage"
-        else "❓"
-    )
-
-    return f"{emoji} **Blair** : **{status}**\n*Vérifié sur status.ankama.com*"
-
-def run_once(notify_on_first_run=False):
-    html = get_page_with_browser()
-    current = extract_blair_status(html)
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    print(f"[{now}] {format_blair_message(current)}", flush=True)
-
-    state = load_state()
-    previous_status = state.get("status")
+    if not current.get("found"):
+        base = "❔ **Blair** introuvable dans la liste DOFUS Touch"
+    else:
+        base = f"{emoji} **Blair** : **{status_label}**"
 
     if previous_status is None:
-        save_state(current)
-        if notify_on_first_run:
-            send_webhook(
-                format_blair_message(current),
-                color_for(current.get("status", "unknown"))
-            )
+        prefix = "🆕 **Premier relevé**\n"
+    elif previous_status != status:
+        previous_label = format_status_label(previous_status)
+        prefix = f"🚨 **Changement détecté**\nAncien statut : **{previous_label}**\nNouveau statut : **{status_label}**\n"
+    else:
+        prefix = "ℹ️ **Aucun changement**\n"
+
+    return f"{prefix}{base}\n*Vérifié sur status.ankama.com*"
+
+def send_webhook(content, color=3447003):
+    if not WEBHOOK_URL:
+        print("ℹ️ WEBHOOK_URL absent : envoi Discord ignoré", flush=True)
         return
 
-    if current.get("status") != previous_status:
-        msg = f"**Changement détecté !**\n{format_blair_message(current)}"
-        send_webhook(msg, color_for(current.get("status", "unknown")))
-        save_state(current)
+    payload = {
+        "username": "Blair Status Watcher",
+        "embeds": [{
+            "title": "Statut du serveur Blair",
+            "description": content,
+            "color": color,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }]
+    }
+
+    r = requests.post(WEBHOOK_URL, json=payload, timeout=20)
+    print(f"Discord: {r.status_code}", flush=True)
+    r.raise_for_status()
+
+def run_once():
+    html = get_page_with_browser()
+    current = extract_blair_status(html)
+    current["checked_at"] = datetime.now(timezone.utc).isoformat()
+
+    previous = load_state()
+    previous_status = previous.get("status")
+
+    print(f"Statut actuel: {current.get('status')}", flush=True)
+    if previous_status is None:
+        print("Aucun état précédent trouvé", flush=True)
     else:
-        print("✅ Pas de changement", flush=True)
-        save_state(current)
+        print(f"Statut précédent: {previous_status}", flush=True)
+
+    message = format_blair_message(current, previous_status)
+
+    # Laisse cette ligne active si tu veux envoyer à Discord :
+    send_webhook(message, color_for(current.get("status", "unknown")))
+
+    # Si tu veux désactiver Discord temporairement, commente la ligne au-dessus.
+
+    save_state(current)
 
 def main():
-    if not WEBHOOK_URL:
-        raise RuntimeError("❌ WEBHOOK_URL manquant - Ajoutez-le dans GitHub Secrets")
-
-    # TEST GITHUB ACTIONS - à commenter/supprimer après validation
-    if os.getenv("GITHUB_ACTIONS", "").lower() == "true":
-        print("🧪 MODE TEST GITHUB ACTIONS", flush=True)
-        send_webhook("🚀 **TEST GitHub Actions OK** - Script + webhook fonctionnels !", 5763719)
-        return
-
-    if len(sys.argv) > 1 and sys.argv[1] == "0":
-        run_once(True)
-    elif SINGLE_RUN:
-        print("🔄 Exécution unique (GitHub Actions)", flush=True)
-        run_once()
-    else:
-        print("👀 Surveillance 24/24 démarrée", flush=True)
-        #while True:
-            try:
-                run_once()
-                time.sleep(CHECK_INTERVAL)
-            except KeyboardInterrupt:
-                print("🛑 Arrêt demandé", flush=True)
-                break
-            except Exception as e:
-                print(f"❌ Erreur: {e}", flush=True)
-                time.sleep(60)
+    run_once()
 
 if __name__ == "__main__":
     main()
