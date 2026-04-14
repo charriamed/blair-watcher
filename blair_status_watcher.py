@@ -136,22 +136,13 @@ def run_once(notify_on_first_run=False):
         save_state(current)
 
 def main():
-    args = sys.argv[1:] if len(sys.argv) > 1 else []
-    
-    if "0" in args:
+    if len(sys.argv) > 1 and sys.argv[1] == "0":
         run_once(True)
     else:
-        print("👀 Surveillance démarrée (Ctrl+C pour arrêter)")
+        print("👀 Surveillance 24/24 démarrée")
         while True:
-            try:
-                run_once()
-                time.sleep(CHECK_INTERVAL)
-            except KeyboardInterrupt:
-                print("\n👋 Arrêt demandé.")
-                break
-            except Exception as e:
-                print(f"❌ Erreur: {e}", flush=True)
-                time.sleep(60)
+            run_once()
+            time.sleep(CHECK_INTERVAL)
 
 if __name__ == "__main__":
     main()
