@@ -173,7 +173,7 @@ def main():
         run_once()
     else:
         print("👀 Surveillance 24/24 démarrée", flush=True)
-        while True:
+        #while True:
             try:
                 run_once()
                 time.sleep(CHECK_INTERVAL)
