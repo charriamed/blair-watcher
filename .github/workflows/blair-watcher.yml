@@ -1,16 +1,14 @@
 name: Blair Watcher
-env:
-  WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
-  SINGLE_RUN: "1"
+
 on:
-  workflow_dispatch:
   schedule:
     - cron: "*/5 * * * *"  # Toutes les 5 min UTC
+  workflow_dispatch:
 
 jobs:
   watcher:
     runs-on: ubuntu-latest
-    timeout-minutes: 10  # Timeout job 10 min
+    timeout-minutes: 10
 
     steps:
     - uses: actions/checkout@v4
@@ -19,13 +17,14 @@ jobs:
       with:
         python-version: '3.12'
     
-    - run: |
+    - name: Install deps
+      run: |
         pip install --upgrade pip
         pip install -r requirements.txt
         python -m playwright install --with-deps chromium
     
-    - run: python blair_status_watcher.py
+    - name: Run watcher
       env:
         WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
-        SINGLE_RUN: "1"  # Variable pour 1 exécution seulement
-      timeout-minutes: 8  # Timeout étape 8 min
+        SINGLE_RUN: "1"
+      run: python blair_status_watcher.py
