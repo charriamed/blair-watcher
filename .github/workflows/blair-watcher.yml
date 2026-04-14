@@ -1,5 +1,7 @@
 name: Blair Watcher
-
+env:
+  WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+  SINGLE_RUN: "1"
 on:
   workflow_dispatch:
   schedule:
