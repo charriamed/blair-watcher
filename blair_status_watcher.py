@@ -8,6 +8,17 @@ from datetime import datetime, timezone
 from playwright.sync_api import sync_playwright
 import requests
 
+# ===========================================
+# TEST GITHUB ACTIONS - À COMMENTER APRÈS TEST
+# ===========================================
+import os
+if os.getenv("GITHUB_ACTIONS", "0") == "1":
+    print("🧪 MODE TEST GITHUB ACTIONS")
+    # Envoi test immédiat pour vérifier le webhook
+    send_discord_message("🚀 **TEST GitHub Actions OK** - Script lancé et webhook fonctionnel !")
+    exit(0)  # Arrête le script après test
+# ===========================================
+
 STATUS_URL = "https://status.ankama.com/"
 WEBHOOK_URL = "https://discord.com/api/webhooks/1493557013794259064/sV18egi6XwbLBArEgqfd__GzT616Rw4rSK0rurO0S4X7DvlZqbPdGvGQFl76sv9ef8jQ"
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "300"))
